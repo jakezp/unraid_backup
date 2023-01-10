@@ -1,8 +1,8 @@
 #!/bin/bash
 #arrayStarted=true
-REPO_NAME=backuparr
+REPO_NAME=unraid_backup
 REPO_LOCATION=/tmp/$REPO_NAME
-REPO_URL=https://github.com/vaparr/$REPO_NAME.git
+REPO_URL=https://github.com/jakezp/$REPO_NAME.git
 SCRIPT_NAME=backuparr.sh
 
 trap "kill -- $$" exit SIGINT SIGTERM SIGHUP SIGPIPE SIGQUIT
@@ -16,14 +16,14 @@ trap "kill -- $$" exit SIGINT SIGTERM SIGHUP SIGPIPE SIGQUIT
         echo "-n [docker] : Only backup this single docker"
         echo "-u : Use when calling from Unraid User.Scripts to adjust output to not flood logs"
         echo "-b : Backup location (Default: /mnt/user/backup)"
-        echo "-o : OneDrive location (configure in rclone)"
+        echo "-g : Google Drive location (configure in rclone)"
         echo "-y : Sets the number of archive days. Defaults to 3, can be overridden in .conf"
 
 [ ! -d $REPO_LOCATION ] && mkdir -p $REPO_LOCATION && cd $REPO_LOCATION && git clone $REPO_URL
 cd $REPO_LOCATION/$REPO_NAME && git fetch --all && git reset --hard origin/master && git pull --ff-only
 chmod +x $REPO_LOCATION/$REPO_NAME/$SCRIPT_NAME
-exec /bin/bash $REPO_LOCATION/$REPO_NAME/$SCRIPT_NAME -u -o onedrive:unraid/backup
+exec /bin/bash $REPO_LOCATION/$REPO_NAME/$SCRIPT_NAME -a -u -y 3 -g gdrive:unraid_backup
 # Example for specifying backup path: 
-# exec /bin/bash $REPO_LOCATION/$REPO_NAME/$SCRIPT_NAME -u -o onedrive:unraid/backup -b /path/to/backupFolder
+# exec /bin/bash $REPO_LOCATION/$REPO_NAME/$SCRIPT_NAME -u -o gdrive:unraid_backup -b /path/to/backupFolder
 # This is what i use:
 # exec /bin/bash $REPO_LOCATION/$REPO_NAME/$SCRIPT_NAME -u -a
