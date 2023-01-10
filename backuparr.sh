@@ -3,12 +3,14 @@
 SECONDS=0
 BACKUP_LOCATION=/mnt/user/backup
 NUM_DAILY=3
-ONEDRIVE_LOCATION=""
+GDRIVE_LOCATION=""
 DEFAULT_TIMEOUT=30
 DRYRUN=""
 PROGRESS="--info=progress2"
-EXCLUDE=(profile/lock log/ Log/ logs/ Logs/ '*.log' log.txt '*.log.*' '*.pid' '*.sample' '*.lock' /lock)
-EXCLUDEPRE=('*.db' '*.xml' '*.dat' '*.dat.old' '*.db-*' '*.ini' '*.conf' '*.json' '*.ejs' BT_backup/ databases/ '*.sqlite*' '*.sqlite')
+#EXCLUDE=(profile/lock log/ Log/ logs/ Logs/ '*.log' log.txt '*.log.*' '*.pid' '*.sample' '*.lock' /lock)
+EXCLUDE=(profile/lock '*.pid' '*.sample' '*.lock' /lock)
+#EXCLUDEPRE=('*.db' '*.xml' '*.dat' '*.dat.old' '*.db-*' '*.ini' '*.conf' '*.json' '*.ejs' BT_backup/ databases/ '*.sqlite*' '*.sqlite')
+EXCLUDEPRE=('*.dat.old')
 
 script_path=$(dirname $(realpath -s $0))
 is_user_script=0
@@ -16,24 +18,24 @@ now=$(date +"%Y-%m-%d")
 create_only=0
 dry_run=0
 verbose=0
-skip_onedrive=0
+skip_gdrive=0
 docker_name=""
 STOPPED_DOCKER=""
 archive_backups=0
 
-while getopts "h?cufdvsan:b:o:y:" opt; do
+while getopts "h?cufdvsan:b:g:y:" opt; do
     case "$opt" in
     h | \?)
         echo Options:
         echo "-d : Dry Run"
         echo "-v : Verbose"
-        echo "-s : Skip OneDrive Upload"
+        echo "-s : Skip GDrive Upload"
         echo "-a : Archive live backup to tgz (configure ARCHIVE_DAYS in DockerName-backup.conf)"
         echo "-c : Create Backup.config files only"
         echo "-n [docker] : Only backup this single docker"
         echo "-u : Use when calling from Unraid User.Scripts to adjust output to not flood logs"
         echo "-b : Backup location"
-        echo "-o : OneDrive location (configure in rclone)"
+        echo "-g : GDrive location (configure in rclone)"
         echo "-y : Sets the number of archive days. Defaults to 3, can be overridden in .conf"
         exit 0
         ;;
@@ -49,7 +51,7 @@ while getopts "h?cufdvsan:b:o:y:" opt; do
         PROGRESS="--progress"
         ;;
     s)
-        skip_onedrive=1
+        skip_gdrive=1
         ;;
     a)
         archive_backups=1
@@ -66,8 +68,8 @@ while getopts "h?cufdvsan:b:o:y:" opt; do
     y)
         NUM_DAILY=${OPTARG}
         ;;
-    o)
-        ONEDRIVE_LOCATION=${OPTARG}
+    g)
+        GDRIVE_LOCATION=${OPTARG}
         ;;
         #f)
         #output_file=$OPTARG
@@ -106,7 +108,7 @@ function ShouldExit() {
     pid=$(cut -d' ' -f4 < /proc/$$/stat)
   # echo "PPID: $PPID pid: $pid"
 
-    if [[ "$PPID" != "$pid" ]]; then 
+    if [[ "$PPID" != "$pid" ]]; then
        echo "Parent has died. Exiting."
        ExitFunc
     fi
@@ -277,15 +279,15 @@ function backup_docker() {
     docker inspect $D_NAME >$T_PATH/$D_NAME-dockerconfig.json
 
     local S_PATH=""
-    if [ -d "/mnt/cache/appdata/$D_NAME" ]; then        
+    if [ -d "/mnt/cache/appdata/$D_NAME" ]; then
         S_PATH="/mnt/user/appdata/$D_NAME"
         LogInfo "Using $S_PATH as backup source"
     fi
-    
+
     if [ "$S_PATH" == "" ]; then
         S_PATH=$(docker inspect -f '{{json .Mounts }}' $D_NAME | jq .[].Source | grep appdata/ | grep -i $D_NAME | head -1 | cut -f 2 -d \" | tr -d '\n')
     fi
-    
+
     if [ "$S_PATH" == "" ]; then
         S_PATH=$(docker inspect -f '{{json .Mounts }}' $D_NAME | jq .[].Source | grep appdata/ | head -1 | cut -f 2 -d \" | tr -d '\n')
     fi
@@ -296,7 +298,7 @@ function backup_docker() {
     [ ! -d $D_PATH ] && mkdir -p $D_PATH
 
     touch $D_PATH
-    
+
     local pre_excludes=${exclude_opts_pre[@]}
     local full_excludes=${exclude_opts[@]}
 
@@ -428,7 +430,6 @@ BackupFlash
 
 # docker backup
 
-
 if [[ "$docker_name" == "" ]]; then
     for container in $(GetDockerList); do
         backup_docker $container
@@ -446,22 +447,22 @@ fi
 echo "---- Backup Complete [$(date)] ----"
 echo ""
 
-if [[ "$create_only" == "1" || "$dry_run" == "1" || "$skip_onedrive" == "1" || "$ONEDRIVE_LOCATION" == "" ]]; then
+if [[ "$create_only" == "1" || "$dry_run" == "1" || "$skip_gdrive" == "1" || "$GDRIVE_LOCATION" == "" ]]; then
     SUCCESS="true"
     exit
 fi
 
-echo "---- Starting Onedrive upload [$(date)] ----"
+echo "---- Starting Gdrive upload [$(date)] ----"
 echo ""
 op="[RCLONE]"
-RCLONE="/usr/sbin/rclone sync --exclude Live/** --onedrive-chunk-size 70M --retries 3 --checkers 16 --transfers 6 --fast-list --copy-links"
+RCLONE="/usr/sbin/rclone sync -P --exclude Live/** --drive-chunk-size 64M --retries 3 --checkers 16 --transfers 6 --fast-list --copy-links"
 if [[ $is_user_script = 1 ]]; then
-    LogInfo $op: $RCLONE $BACKUP_LOCATION $ONEDRIVE_LOCATION
+    LogInfo $op: $RCLONE $BACKUP_LOCATION $GDRIVE_LOCATION
     LogInfo $op: rclone is working. Waiting...
-    $RCLONE $BACKUP_LOCATION $ONEDRIVE_LOCATION
+    $RCLONE $BACKUP_LOCATION $GDRIVE_LOCATION
 else
-    LogVerbose $op: $RCLONE --progress $BACKUP_LOCATION $ONEDRIVE_LOCATION
-    $RCLONE -v --progress $BACKUP_LOCATION $ONEDRIVE_LOCATION
+    LogVerbose $op: $RCLONE --progress $BACKUP_LOCATION $GDRIVE_LOCATION
+    $RCLONE -v --progress $BACKUP_LOCATION $GDRIVE_LOCATION
 fi
 if [[ $? -ne 0 ]]; then
     LogError "$op: rclone failed"
@@ -469,11 +470,11 @@ fi
 
 SUCCESS="true"
 echo ""
-echo "---- Onedrive upload Complete [$(date)] ----"
+echo "---- Gdrive upload Complete [$(date)] ----"
 echo ""
 
-#/usr/sbin/rclone sync -v --transfers 16 --fast-list --progress --copy-links $BACKUP_LOCATION $ONEDRIVE_LOCATION
-#/usr/sbin/rclone sync -v /mnt/user/CommunityApplicationsAppdataBackup/ onedrive:unraid/backup
+#/usr/sbin/rclone sync -v --transfers 16 --fast-list --progress --copy-links $BACKUP_LOCATION $GDRIVE_LOCATION
+#/usr/sbin/rclone sync -v /mnt/user/CommunityApplicationsAppdataBackup/ gdrive:unraid/backup
 
 #!/bin/bash Plex docker stuff
 # rsync plex files to backup location first, minimize delay on second run with docker stopped
