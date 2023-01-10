@@ -1,4 +1,8 @@
-# backuparr
+# UNRAID backup
+Forked from *vaparr/backuparr* and tweaked for my specific use case
+
+---
+### To be updated
 Backup dockers from unraid efficiently
 
 
