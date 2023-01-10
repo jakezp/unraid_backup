@@ -93,10 +93,10 @@ function ExitFunc() {
     fi
 
     if [[ ! "$SUCCESS" == "true" ]]; then
-        NotifyError "[Backuparr exited]" "Script exited abnormally after $time_m."
+        NotifyError "[Rclone backup failed]" "Rclone backup script exited abnormally after $time_m."
         exit 255
     else
-        NotifyInfo "[Backuparr exited]" "Script exited normally after $time_m."
+        NotifyInfo "[Rclone backup completed]" "rclone backup script completed successfully after $time_m."
         exit 0
     fi
 
@@ -115,14 +115,14 @@ function ShouldExit() {
 }
 function NotifyInfo() {
     if [[ $is_user_script = 1 ]]; then
-        /usr/local/emhttp/webGui/scripts/notify -e "[Backuparr]" -s "$1" -d "$2" -i "normal"
+        /usr/local/emhttp/webGui/scripts/notify -e "[Rclone backup]" -s "$1" -d "$2" -i "normal"
     fi
     echo $1 - $2
 }
 
 function NotifyError() {
     if [[ $is_user_script = 1 ]]; then
-        /usr/local/emhttp/webGui/scripts/notify -e "[Backuparr]" -s "$1" -d "$2" -i "alert"
+        /usr/local/emhttp/webGui/scripts/notify -e "[Rclone backup]" -s "$1" -d "$2" -i "alert"
     fi
     echo [ERROR] $1 - $2
 }
@@ -144,7 +144,7 @@ function LogWarning() {
 
 function LogError() {
     echo "[ERROR] $@"
-    NotifyError "Backuparr Error" "$@"
+    NotifyError "[Rclone backup error]" "$@"
 }
 
 function stop_docker() {
@@ -377,6 +377,7 @@ function BackupFlash() {
 
             if [ -f /$backup_file ]; then
                 mkdir -p $BACKUP_LOCATION/Flash
+                find /usr/local/emhttp/ -maxdepth 1 -name '*flash-backup-*.zip' -delete
                 mv /$backup_file $BACKUP_LOCATION/Flash
                 find $BACKUP_LOCATION/Flash -mtime +${NUM_DAILY} -name '*.zip' -delete
             fi
