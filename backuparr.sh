@@ -280,7 +280,7 @@ function backup_docker() {
 
     local S_PATH=""
     if [ -d "/mnt/cache/appdata/$D_NAME" ]; then
-        S_PATH="/mnt/user/appdata/$D_NAME"
+        S_PATH="/mnt/cache/appdata/$D_NAME"
         LogInfo "Using $S_PATH as backup source"
     fi
 
