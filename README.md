@@ -117,6 +117,7 @@ This creates `<appname>-backup.conf` for every container under `$BACKUP_LOCATION
 | `EXCLUDE` | `(profile/lock *.pid ...)` | Global rsync excludes (all containers) |
 | `EXCLUDEPRE` | `(*.dat.old)` | Extra excludes for pre-stop rsync pass only |
 | `EXTRA_DIRS` | `()` | Non-Docker dirs to back up (see below) |
+| `EXCLUDE_CONTAINERS` | `()` | Container names to skip entirely (no backup, no dirs created) |
 
 ### Per-app (`<appname>-backup.conf`)
 

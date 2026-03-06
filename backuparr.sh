@@ -38,6 +38,7 @@ GDRIVE_INCREMENTAL=true
 EXCLUDE=(profile/lock '*.pid' '*.sample' '*.lock' /lock)
 EXCLUDEPRE=('*.dat.old')
 EXTRA_DIRS=()
+EXCLUDE_CONTAINERS=()
 DRYRUN=""
 PROGRESS="--info=progress2"
 
@@ -460,6 +461,14 @@ function backup_docker() {
     local D_NAME=$1
 
     [[ -z "$D_NAME" ]] && LogInfo "Docker name is a required param" && return
+
+    # Check global exclusion list
+    for excluded in "${EXCLUDE_CONTAINERS[@]}"; do
+        if [[ "$excluded" == "$D_NAME" ]]; then
+            LogInfo "$op: Skipping $D_NAME (in EXCLUDE_CONTAINERS)"
+            return
+        fi
+    done
 
     # Per-app paths
     local T_PATH="$BACKUP_LOCATION/Docker/$D_NAME"
