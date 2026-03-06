@@ -68,10 +68,12 @@ rclone config
 
 ### 2. Set up `backuparr.conf`
 
-Copy `backuparr.conf` from the repo to one of these locations (script checks in order):
-- Next to `backuparr.sh` (e.g. in the cloned repo)
-- `/boot/config/plugins/user.scripts/backuparr.conf` ← recommended for persistence across reboots
-- `$BACKUP_LOCATION/backuparr.conf`
+Copy `backuparr.conf` from the repo into the **same directory as `user.script.sh`** on your Unraid server. The launcher automatically detects its own directory and passes the conf path to `backuparr.sh` via `-C`, so it works regardless of what the script directory is named.
+
+Typical location:
+```
+/boot/config/plugins/user.scripts/scripts/<your_script_name>/backuparr.conf
+```
 
 Edit it to match your setup:
 
