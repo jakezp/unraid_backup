@@ -43,7 +43,20 @@ chmod +x "$REPO_LOCATION/$REPO_NAME/$SCRIPT_NAME"
 # The script also checks /boot/config/plugins/user.scripts/backuparr.conf and
 # $BACKUP_LOCATION/backuparr.conf as fallback locations.
 
-exec /bin/bash "$REPO_LOCATION/$REPO_NAME/$SCRIPT_NAME" -a -u -y 3 -g gdrive:unraid_backup
-# Examples:
-# exec /bin/bash "$REPO_LOCATION/$REPO_NAME/$SCRIPT_NAME" -u -a -g gdrive:unraid_backup -b /path/to/backupFolder
-# exec /bin/bash "$REPO_LOCATION/$REPO_NAME/$SCRIPT_NAME" -u -a
+# Execute the backup script.
+#
+# Flags always needed:
+#   -a   Enable delta versioning (saves Changes/ dirs). Remove to run Live/-only backups.
+#   -u   Running from Unraid User.Scripts (enables notify popups in the UI).
+#
+# Flags NOT needed if backuparr.conf is configured on this server:
+#   -g   Overrides GDRIVE_LOCATION from backuparr.conf (omit if conf is set up)
+#   -y   Overrides DEFAULT_LOCAL_SNAPSHOTS from backuparr.conf (omit if conf is set up)
+#
+# Recommended: place backuparr.conf at /boot/config/plugins/user.scripts/backuparr.conf
+# and set GDRIVE_LOCATION + DEFAULT_LOCAL_SNAPSHOTS there instead of using -g/-y here.
+exec /bin/bash "$REPO_LOCATION/$REPO_NAME/$SCRIPT_NAME" -a -u
+
+# Legacy examples (use these only if you are NOT using backuparr.conf):
+# exec /bin/bash "$REPO_LOCATION/$REPO_NAME/$SCRIPT_NAME" -a -u -g gdrive:unraid_backup -y 3
+# exec /bin/bash "$REPO_LOCATION/$REPO_NAME/$SCRIPT_NAME" -a -u -b /path/to/backupFolder -g gdrive:unraid_backup
