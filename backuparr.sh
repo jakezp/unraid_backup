@@ -1,10 +1,10 @@
 #!/bin/bash
 ###############################################################################
-# backuparr.sh — Unraid Docker + extra-dirs backup with hard-link snapshots
+# backuparr.sh — Unraid Docker + extra-dirs backup with rsync delta versioning
 #
 # Features:
-#   - Hard-link snapshots (rsnapshot-style) instead of daily tarballs
-#   - Incremental rclone with --backup-dir versioning
+#   - Rsync --backup-dir local versioning (works across Unraid multi-disk shares)
+#   - Incremental rclone with --backup-dir versioning on Google Drive
 #   - Per-app configurable retention, excludes, and directory-content exclusion
 #   - Extra directories outside Docker appdata
 #   - Centralised global config (backuparr.conf)
@@ -305,83 +305,51 @@ function create_config() {
 }
 
 ###############################################################################
-# SNAPSHOT FUNCTIONS (replaces archive_docker)
+# LOCAL VERSIONING via rsync --backup-dir
 #
-# Creates rsnapshot-style hard-link snapshots:
-#   Snapshots/YYYY-MM-DD/ where unchanged files are hard-linked from the
-#   previous snapshot via cp -al, then rsync updates only changed files.
-#   Old snapshots beyond retention count are pruned.
+# Instead of hard-link snapshots (which require same filesystem — not viable
+# on Unraid's multi-disk FUSE shares), we use rsync's built-in --backup-dir.
+#
+# During the authoritative rsync pass, any file that is changed or deleted
+# from Live/ is automatically moved to Changes/YYYY-MM-DD/ before being
+# overwritten. Result:
+#
+#   Docker/appname/
+#     Live/            ← always-current full copy
+#     Changes/
+#       2026-03-04/    ← only files that changed/were deleted that day
+#       2026-03-05/
+#       2026-03-06/
+#
+# This works on any filesystem, costs only delta storage, and requires no
+# hard link support. Old Changes/ dirs are pruned per LOCAL_SNAPSHOTS.
 ###############################################################################
 
-function create_snapshot() {
-    # Args: $1=source_dir (Live/) $2=snapshots_base_dir $3=retention_count $4=label
-    local op="[SNAPSHOT]"
-    local source_dir=$1
-    local snap_base=$2
-    local retention=$3
-    local label=${4:-snapshot}
-
-    [[ ! -d "$source_dir" ]] && LogWarning "$op: Source $source_dir does not exist, skipping snapshot" && return
-
-    local snap_today="$snap_base/$now"
-
-    if [[ -d "$snap_today" ]]; then
-        LogInfo "$op: Snapshot $snap_today already exists for today, skipping."
-        return
-    fi
-
-    [[ ! -d "$snap_base" ]] && mkdir -p "$snap_base"
-
-    # Find the most recent existing snapshot to use as hard-link base
-    local latest_snap=""
-    latest_snap=$(ls -1d "$snap_base"/????-??-?? 2>/dev/null | sort -r | head -1)
-
-    if [[ "$dry_run" == "0" ]]; then
-        if [[ -n "$latest_snap" && -d "$latest_snap" ]]; then
-            LogInfo "$op: Creating hard-link copy from $latest_snap"
-            cp -al "$latest_snap" "$snap_today"
-        else
-            LogInfo "$op: No previous snapshot found, creating fresh snapshot"
-            mkdir -p "$snap_today"
-        fi
-
-        # Rsync from Live/ into the new snapshot — only changed files are written
-        LogInfo "$op: Syncing changes into $snap_today"
-        rsync -a --delete "$source_dir/" "$snap_today/"
-        if [[ $? -ne 0 ]]; then
-            LogError "$op: rsync into snapshot failed for $label"
-        fi
-    else
-        LogInfo "$op: [DRY RUN] Would create snapshot $snap_today from $source_dir"
-    fi
-
-    # Prune old snapshots beyond retention count
-    prune_snapshots "$snap_base" "$retention" "$label"
-}
-
-function prune_snapshots() {
-    # Args: $1=snapshots_base_dir $2=retention_count $3=label
-    local op="[PRUNE]"
-    local snap_base=$1
+function prune_local_changes() {
+    # Args: $1=changes_base_dir $2=retention_count $3=label
+    local op="[PRUNE LOCAL]"
+    local changes_base=$1
     local retention=$2
-    local label=${3:-snapshot}
+    local label=${3:-app}
 
-    local snap_list
-    snap_list=$(ls -1d "$snap_base"/????-??-?? 2>/dev/null | sort -r)
+    [[ ! -d "$changes_base" ]] && return
+
+    local dir_list
+    dir_list=$(ls -1d "$changes_base"/????-??-?? 2>/dev/null | sort -r)
     local count=0
 
-    while IFS= read -r snap_dir; do
-        [[ -z "$snap_dir" ]] && continue
+    while IFS= read -r dated_dir; do
+        [[ -z "$dated_dir" ]] && continue
         count=$((count + 1))
         if [[ $count -gt $retention ]]; then
             if [[ "$dry_run" == "0" ]]; then
-                LogInfo "$op: Removing old snapshot $snap_dir ($label)"
-                rm -rf "$snap_dir"
+                LogInfo "$op: Removing old changes dir $dated_dir ($label)"
+                rm -rf "$dated_dir"
             else
-                LogInfo "$op: [DRY RUN] Would remove $snap_dir ($label)"
+                LogInfo "$op: [DRY RUN] Would remove $dated_dir ($label)"
             fi
         fi
-    done <<< "$snap_list"
+    done <<< "$dir_list"
 }
 
 ###############################################################################
@@ -496,7 +464,7 @@ function backup_docker() {
     # Per-app paths
     local T_PATH="$BACKUP_LOCATION/Docker/$D_NAME"
     local D_PATH="$T_PATH/Live"
-    local SNAP_PATH="$T_PATH/Snapshots"
+    local CHANGES_PATH="$T_PATH/Changes/$now"
     local CONF_NAME="${D_NAME}-backup.conf"
 
     # Per-app defaults (overridden by .conf if present)
@@ -589,11 +557,11 @@ function backup_docker() {
 
     printf "Dest Path: \t %s\n" "$D_PATH"
     printf "Source Path: \t %s\n" "$S_PATH"
-    [[ "$snapshot_backups" == "1" ]] && printf "Snapshot Path: \t %s\n" "$SNAP_PATH"
+    [[ "$snapshot_backups" == "1" ]] && printf "Changes Path: \t %s\n" "$CHANGES_PATH"
     printf "Running: \t %s\n" "$RUNNING"
     printf "Stop Timeout: \t %s\n" "$TIMEOUT"
-    printf "Local Snaps: \t %s\n" "$LOCAL_SNAPSHOTS"
-    printf "Remote Snaps: \t %s\n" "$REMOTE_SNAPSHOTS"
+    printf "Local Versions: \t %s\n" "$LOCAL_SNAPSHOTS"
+    printf "Remote Versions: \t %s\n" "$REMOTE_SNAPSHOTS"
     [[ -n "$EXCLUDES" ]] && printf "Excludes: \t (%s)\n" "${EXCLUDES[*]}"
     [[ -n "$EXCLUDE_DIRS" ]] && printf "Exclude Dirs: \t (%s)\n" "${EXCLUDE_DIRS[*]}"
     echo ""
@@ -612,9 +580,16 @@ function backup_docker() {
     fi
 
     # --- RSYNC PASS 2: Authoritative copy AFTER docker stop ---
+    # --backup --backup-dir moves changed/deleted files to Changes/YYYY-MM-DD/
+    # before overwriting them. Works on any filesystem (no hard links needed).
     LogInfo "$op: RSYNC RUN 2 - Copy files AFTER docker stop"
-    LogVerbose "$op: rsync -a $PROGRESS -h ${full_excludes[*]} --delete --delete-excluded $DRYRUN $S_PATH/ $D_PATH/"
-    rsync -a $PROGRESS -h "${full_excludes[@]}" --delete --delete-excluded $DRYRUN "$S_PATH/" "$D_PATH/"
+    local backup_dir_opts=()
+    if [[ "$snapshot_backups" == "1" ]]; then
+        mkdir -p "$CHANGES_PATH"
+        backup_dir_opts=(--backup --backup-dir "$CHANGES_PATH")
+    fi
+    LogVerbose "$op: rsync -a $PROGRESS -h ${full_excludes[*]} ${backup_dir_opts[*]} --delete --delete-excluded $DRYRUN $S_PATH/ $D_PATH/"
+    rsync -a $PROGRESS -h "${full_excludes[@]}" "${backup_dir_opts[@]}" --delete --delete-excluded $DRYRUN "$S_PATH/" "$D_PATH/"
     if [[ $? -ne 0 ]]; then
         LogError "$op: RSYNC RUN 2 Failed"
     fi
@@ -633,9 +608,9 @@ function backup_docker() {
         LogInfo "$op: Docker Start Skipped. FORCESTART=$FORCESTART, RUNNING=$RUNNING, TIMEOUT=$TIMEOUT"
     fi
 
-    # --- Create hard-link snapshot (if -a flag set) ---
+    # --- Prune old local Changes/ dirs beyond retention ---
     if [[ "$snapshot_backups" == "1" ]]; then
-        create_snapshot "$D_PATH" "$SNAP_PATH" "$LOCAL_SNAPSHOTS" "$D_NAME"
+        prune_local_changes "$T_PATH/Changes" "$LOCAL_SNAPSHOTS" "$D_NAME"
     fi
 
     echo ""
@@ -675,7 +650,7 @@ function backup_extra_dirs() {
 
         local base_dir="$BACKUP_LOCATION/ExtraDirs/$dest_name"
         local live_dir="$base_dir/Live"
-        local snap_dir="$base_dir/Snapshots"
+        local changes_dir="$base_dir/Changes/$now"
 
         LogInfo "$op: Backing up $src_path -> $dest_name"
         LogInfo "$op:   Live: $live_dir"
@@ -689,16 +664,21 @@ function backup_extra_dirs() {
 
         [[ ! -d "$live_dir" ]] && mkdir -p "$live_dir"
 
-        # Rsync source to Live/ (using global excludes only)
+        # Rsync source to Live/, using --backup-dir to capture deltas
         LogInfo "$op: Syncing $src_path -> $live_dir"
-        rsync -a $PROGRESS -h "${exclude_opts[@]}" --delete --delete-excluded $DRYRUN "$src_path/" "$live_dir/"
+        local extra_backup_opts=()
+        if [[ "$snapshot_backups" == "1" ]]; then
+            mkdir -p "$changes_dir"
+            extra_backup_opts=(--backup --backup-dir "$changes_dir")
+        fi
+        rsync -a $PROGRESS -h "${exclude_opts[@]}" "${extra_backup_opts[@]}" --delete --delete-excluded $DRYRUN "$src_path/" "$live_dir/"
         if [[ $? -ne 0 ]]; then
             LogError "$op: rsync failed for $dest_name"
         fi
 
-        # Create hard-link snapshot
+        # Prune old local Changes/ dirs beyond retention
         if [[ "$snapshot_backups" == "1" ]]; then
-            create_snapshot "$live_dir" "$snap_dir" "$local_snaps" "$dest_name"
+            prune_local_changes "$base_dir/Changes" "$local_snaps" "$dest_name"
         fi
 
         # Rclone upload (incremental)
