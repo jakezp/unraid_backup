@@ -416,7 +416,6 @@ function rclone_upload_app() {
                 --transfers 6 \
                 --fast-list \
                 --copy-links \
-                $PROGRESS \
                 "$local_dir/" "$remote_path/"
             if [[ $? -ne 0 ]]; then
                 LogError "$op: rclone copy failed for $label"
@@ -438,7 +437,6 @@ function rclone_upload_app() {
                 --transfers 6 \
                 --fast-list \
                 --copy-links \
-                $PROGRESS \
                 "$local_dir/" "$remote_path/"
             if [[ $? -ne 0 ]]; then
                 LogError "$op: rclone sync failed for $label"
@@ -831,23 +829,21 @@ echo ""
 if [[ -d "$BACKUP_LOCATION/Docker" ]]; then
     for app_dir in "$BACKUP_LOCATION/Docker"/*/; do
         [[ ! -d "$app_dir" ]] && continue
-        local_app_name=$(basename "$app_dir")
-        live_dir="$app_dir/Live"
+        app_name=$(basename "$app_dir")
+        app_live_dir="$app_dir/Live"
 
-        [[ ! -d "$live_dir" ]] && continue
+        [[ ! -d "$app_live_dir" ]] && continue
 
         # Load per-app remote snapshot count
-        local app_remote_snaps=$DEFAULT_REMOTE_SNAPSHOTS
-        local app_conf="$app_dir/${local_app_name}-backup.conf"
+        app_remote_snaps=$DEFAULT_REMOTE_SNAPSHOTS
+        app_conf="$app_dir/${app_name}-backup.conf"
         if [[ -f "$app_conf" ]]; then
-            # Source just REMOTE_SNAPSHOTS if set
-            local _rs
             _rs=$(grep -E '^\s*REMOTE_SNAPSHOTS=' "$app_conf" 2>/dev/null | tail -1 | cut -d= -f2)
             [[ -n "$_rs" ]] && app_remote_snaps=$_rs
         fi
 
-        remote_path="$GDRIVE_LOCATION/Docker/$local_app_name"
-        rclone_upload_app "$live_dir" "$remote_path" "$app_remote_snaps" "$local_app_name"
+        remote_path="$GDRIVE_LOCATION/Docker/$app_name"
+        rclone_upload_app "$app_live_dir" "$remote_path" "$app_remote_snaps" "$app_name"
     done
 fi
 
@@ -860,7 +856,6 @@ if [[ -d "$BACKUP_LOCATION/Flash" ]]; then
             --retries 3 \
             --fast-list \
             --copy-links \
-            $PROGRESS \
             "$BACKUP_LOCATION/Flash/" "$GDRIVE_LOCATION/Flash/"
         if [[ $? -ne 0 ]]; then
             LogError "[RCLONE]: Flash upload failed"
