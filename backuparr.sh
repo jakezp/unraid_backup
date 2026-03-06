@@ -47,17 +47,39 @@ PROGRESS="--info=progress2"
 ###############################################################################
 script_path=$(dirname "$(realpath -s "$0")")
 
-# Look for backuparr.conf next to the script, or in /boot/config/plugins/user.scripts/
-for _conf_candidate in \
-    "$script_path/backuparr.conf" \
-    "/boot/config/plugins/user.scripts/backuparr.conf" \
-    "$BACKUP_LOCATION/backuparr.conf"; do
-    if [[ -f "$_conf_candidate" ]]; then
-        # shellcheck disable=SC1090
-        . "$_conf_candidate"
+# -C flag allows an explicit config path (set before the search loop runs)
+CONF_PATH_OVERRIDE=""
+
+# Parse -C early (before full getopts) so config is loaded before other flags
+for _arg in "$@"; do
+    if [[ "$_prev_arg" == "-C" ]]; then
+        CONF_PATH_OVERRIDE="$_arg"
         break
     fi
+    _prev_arg="$_arg"
 done
+
+# Look for backuparr.conf: explicit path first, then beside the script,
+# then /boot/config/plugins/user.scripts/, then $BACKUP_LOCATION
+if [[ -n "$CONF_PATH_OVERRIDE" ]]; then
+    if [[ -f "$CONF_PATH_OVERRIDE" ]]; then
+        # shellcheck disable=SC1090
+        . "$CONF_PATH_OVERRIDE"
+    else
+        echo "[WARNING] Config file not found at $CONF_PATH_OVERRIDE — using defaults"
+    fi
+else
+    for _conf_candidate in \
+        "$script_path/backuparr.conf" \
+        "/boot/config/plugins/user.scripts/backuparr.conf" \
+        "$BACKUP_LOCATION/backuparr.conf"; do
+        if [[ -f "$_conf_candidate" ]]; then
+            # shellcheck disable=SC1090
+            . "$_conf_candidate"
+            break
+        fi
+    done
+fi
 
 ###############################################################################
 # RUNTIME STATE
@@ -76,7 +98,7 @@ NUM_DAILY=""         # CLI override for DEFAULT_LOCAL_SNAPSHOTS via -y
 ###############################################################################
 # CLI ARGUMENT PARSING (all original flags preserved)
 ###############################################################################
-while getopts "h?cufdvsan:b:g:y:" opt; do
+while getopts "h?cufdvsan:b:g:y:C:" opt; do
     case "$opt" in
     h | \?)
         echo "Options:"
@@ -90,6 +112,7 @@ while getopts "h?cufdvsan:b:g:y:" opt; do
         echo "  -b [path]   Override backup location"
         echo "  -g [remote] Google Drive rclone remote (e.g. gdrive:unraid_backup)"
         echo "  -y [N]      Override default local snapshot count"
+        echo "  -C [path]   Explicit path to backuparr.conf"
         exit 0
         ;;
     c) create_only=1 ;;
@@ -102,6 +125,7 @@ while getopts "h?cufdvsan:b:g:y:" opt; do
     b) BACKUP_LOCATION=${OPTARG} ;;
     y) NUM_DAILY=${OPTARG} ;;
     g) GDRIVE_LOCATION=${OPTARG} ;;
+    C) CONF_PATH_OVERRIDE=${OPTARG} ;;  # already applied above, consumed here
     esac
 done
 
